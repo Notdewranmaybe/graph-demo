@@ -1,0 +1,54 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body {
+            margin: 0;
+            background-color: #000011;
+        }
+    </style>
+    <script src="//unpkg.com/3d-force-graph"></script>
+</head>
+<body>
+    <div id="3d-graph"></div>
+
+    <script>
+    const Graph = ForceGraph3D()
+      (document.getElementById('3d-graph'))
+      .jsonUrl('./graph_data.json') // 加载你刚才生成的 JSON 文件
+
+      // --- 节点样式配置 ---
+      .nodeAutoColorBy('group') // 根据 group 字段自动配色
+      .nodeLabel(node => `${node.id} <br/> [${node.group}]`) // 鼠标悬停显示的内容
+      .nodeVal('val') // 根据 val 字段决定节点大小
+      .nodeResolution(16) // 节点几何精度，越高越圆
+      .nodeOpacity(0.8)   // 节点透明度
+
+      // --- 连线样式配置 ---
+      .linkWidth(link => link.type === 'nutrient' ? 0.5 : 1) // 营养成分连线细一点，分类连线粗一点
+      .linkOpacity(0.3) // 连线不需要太亮，以免抢戏
+
+      // --- 粒子流体效果 (只在营养成分连线上显示) ---
+      .linkDirectionalParticles(link => link.type === 'nutrient' ? 2 : 0) // 只有 nutrient 连线有粒子
+      .linkDirectionalParticleSpeed(0.005) // 粒子速度
+      .linkDirectionalParticleWidth(2)     // 粒子大小
+
+      // --- 文本标签 (可选，默认不显示，太乱) ---
+      // .nodeThreeObjectExtend(true)
+      // .nodeThreeObject(node => { ...如果你想让文字直接浮在空中写在这里... })
+
+      // --- 点击交互 ---
+      .onNodeClick(node => {
+          // 点击节点，相机推近
+          const distance = 40;
+          const distRatio = 1 + distance/Math.hypot(node.x, node.y, node.z);
+
+          Graph.cameraPosition(
+            { x: node.x * distRatio, y: node.y * distRatio, z: node.z * distRatio }, // new position
+            node, // lookAt ({ x, y, z })
+            3000  // transition duration (ms)
+          );
+      });
+    </script>
+</body>
+</html>
