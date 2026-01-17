@@ -1,0 +1,315 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Forest Foods Knowledge Graph</title>
+    <style>
+        body {
+            margin: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            overflow: hidden;
+            background-color: #000011;
+        }
+
+        /* UI 容器：搜索框 */
+        #search-container {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 10;
+            background: rgba(255, 255, 255, 0.1);
+            padding: 10px;
+            border-radius: 8px;
+            backdrop-filter: blur(5px);
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+
+        input {
+            padding: 8px;
+            border-radius: 4px;
+            border: none;
+            background: rgba(0,0,0,0.5);
+            color: white;
+            outline: none;
+            width: 200px;
+        }
+
+        button {
+            padding: 8px 12px;
+            border: none;
+            border-radius: 4px;
+            background: #007bff;
+            color: white;
+            cursor: pointer;
+            margin-left: 5px;
+        }
+
+            button:hover {
+                background: #0056b3;
+            }
+
+        /* UI 容器：右侧详情面板 (Neo4j 风格) */
+        #info-panel {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            width: 300px;
+            max-height: 80vh;
+            background: rgba(16, 16, 24, 0.9);
+            color: #eee;
+            padding: 20px;
+            border-radius: 12px;
+            border: 1px solid rgba(255,255,255,0.1);
+            overflow-y: auto;
+            transform: translateX(120%); /* 默认隐藏 */
+            transition: transform 0.3s ease-in-out;
+            box-shadow: -5px 5px 15px rgba(0,0,0,0.5);
+            z-index: 10;
+        }
+
+            #info-panel.visible {
+                transform: translateX(0);
+            }
+
+        h2 {
+            margin-top: 0;
+            color: #4facfe;
+            font-size: 1.5em;
+            border-bottom: 1px solid #444;
+            padding-bottom: 10px;
+        }
+
+        .tag {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.8em;
+            margin-bottom: 10px;
+            background: #333;
+            color: #aaa;
+        }
+
+        /* 关系列表样式 */
+        ul {
+            list-style: none;
+            padding: 0;
+            margin-top: 15px;
+        }
+
+        li {
+            background: rgba(255,255,255,0.05);
+            margin-bottom: 8px;
+            padding: 10px;
+            border-radius: 6px;
+            font-size: 0.9em;
+            display: flex;
+            flex-direction: column;
+        }
+
+            li:hover {
+                background: rgba(255,255,255,0.1);
+            }
+
+        .rel-label {
+            color: #aaa;
+            font-size: 0.8em;
+            margin-bottom: 4px;
+        }
+
+        .rel-target {
+            color: #ff9a9e;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        /* 关闭按钮 */
+        .close-btn {
+            position: absolute;
+            top: 10px;
+            right: 15px;
+            cursor: pointer;
+            font-size: 1.2em;
+            color: #888;
+        }
+
+            .close-btn:hover {
+                color: #fff;
+            }
+    </style>
+
+    <script src="//unpkg.com/3d-force-graph"></script>
+</head>
+<body>
+
+    <div id="search-container">
+        <input type="text" id="search-input" placeholder="Search node name..." onkeypress="handleKeyPress(event)">
+        <button onclick="searchNode()">Find</button>
+    </div>
+
+    <div id="info-panel">
+        <span class="close-btn" onclick="closePanel()">×</span>
+        <div id="panel-content">
+            <p style="color: #666; text-align: center; margin-top: 50px;">Select a node to view details</p>
+        </div>
+    </div>
+
+    <div id="3d-graph"></div>
+
+    <script>
+        // --- 1. 配置颜色映射 (让颜色更好看) ---
+        const colorMap = {
+            'Kingdom (界)': '#ff0055', // 红
+            'Phylum (门)': '#ff7700', // 橙
+            'Class (纲)': '#ffdd00', // 黄
+            'Order (目)': '#00ff55', // 绿
+            'Family (科)': '#00ddff', // 青
+            'Genus (属)': '#0055ff', // 蓝
+            'Species (物种)': '#aa00ff', // 紫
+            'Nutrient (营养成分)': '#ffffff' // 白
+        };
+
+        // 全局图谱对象
+        let Graph;
+        let graphData; // 存储原始数据用于检索
+
+        // --- 2. 初始化图谱 ---
+        Graph = ForceGraph3D()
+            (document.getElementById('3d-graph'))
+            .jsonUrl('./graph_data.json')
+
+            // 数据加载完成后，保存一份引用
+            .onEngineStop(() => {
+                graphData = Graph.graphData();
+            })
+
+            // --- 节点样式 ---
+            .nodeColor(node => colorMap[node.group] || '#cccccc') // 使用自定义颜色表
+            .nodeLabel(node => `<div style="background:rgba(0,0,0,0.8); padding:5px; border-radius:4px;">${node.id}<br><small style="color:#aaa">${node.group}</small></div>`) // 悬停提示
+            .nodeVal('val')
+            .nodeResolution(24) // 更圆滑的球
+            .nodeOpacity(0.9)
+
+            // --- 连线样式 ---
+            .linkWidth(link => link.type === 'nutrient' ? 0.5 : 1.5)
+            .linkColor(link => link.type === 'nutrient' ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.1)')
+            .linkDirectionalParticles(link => link.type === 'nutrient' ? 2 : 0) // 营养连线有粒子
+            .linkDirectionalParticleWidth(2)
+            .linkDirectionalParticleSpeed(0.005)
+
+            // --- 关键：点击交互 ---
+            .onNodeClick(node => {
+                // 1. 聚焦相机
+                const distance = 60;
+                const distRatio = 1 + distance / Math.hypot(node.x, node.y, node.z);
+                Graph.cameraPosition(
+                    { x: node.x * distRatio, y: node.y * distRatio, z: node.z * distRatio },
+                    node,
+                    3000
+                );
+
+                // 2. 打开详情面板
+                showPanel(node);
+            })
+            .onBackgroundClick(closePanel); // 点击空白处关闭面板
+
+        // --- 3. 功能函数：显示侧边面板 ---
+        function showPanel(node) {
+            const panel = document.getElementById('info-panel');
+            const content = document.getElementById('panel-content');
+            panel.classList.add('visible');
+
+            // 找出所有与该节点相连的关系
+            // 这里我们需要遍历所有 links，这在前端数千条数据下是很快的
+            const { links } = Graph.graphData();
+
+            // 找到作为 source (发出的线)
+            const outgoing = links.filter(l => l.source.id === node.id);
+            // 找到作为 target (收到的线)
+            const incoming = links.filter(l => l.target.id === node.id);
+
+            // 构建 HTML
+            let html = `
+            <h2>${node.id}</h2>
+            <span class="tag" style="background:${colorMap[node.group] || '#555'}; color: #000; font-weight:bold;">${node.group}</span>
+
+            <h3>Relationships (${outgoing.length + incoming.length})</h3>
+            <ul>
+          `;
+
+            // 渲染发出的关系
+            outgoing.forEach(link => {
+                html += `
+              <li>
+                <span class="rel-label">→ [${link.label}] →</span>
+                <span class="rel-target" onclick="clickNodeByName('${link.target.id}')">${link.target.id}</span>
+              </li>`;
+            });
+
+            // 渲染收到的关系
+            incoming.forEach(link => {
+                html += `
+              <li>
+                <span class="rel-label">← [${link.label}] ←</span>
+                <span class="rel-target" onclick="clickNodeByName('${link.source.id}')">${link.source.id}</span>
+              </li>`;
+            });
+
+            html += `</ul>`;
+            content.innerHTML = html;
+        }
+
+        // --- 4. 功能函数：关闭面板 ---
+        function closePanel() {
+            document.getElementById('info-panel').classList.remove('visible');
+        }
+
+        // --- 5. 功能函数：搜索节点 ---
+        function searchNode() {
+            const input = document.getElementById('search-input');
+            const query = input.value.trim().toLowerCase();
+
+            if (!query || !graphData) return;
+
+            // 查找匹配的节点 (模糊匹配)
+            const node = graphData.nodes.find(n => n.id.toLowerCase().includes(query));
+
+            if (node) {
+                // 模拟点击该节点
+                // 1. 聚焦
+                const distance = 60;
+                const distRatio = 1 + distance / Math.hypot(node.x, node.y, node.z);
+                Graph.cameraPosition(
+                    { x: node.x * distRatio, y: node.y * distRatio, z: node.z * distRatio },
+                    node,
+                    3000
+                );
+                // 2. 显示面板
+                showPanel(node);
+            } else {
+                alert('Node not found!');
+            }
+        }
+
+        // 允许回车搜索
+        function handleKeyPress(event) {
+            if (event.key === 'Enter') searchNode();
+        }
+
+        // 允许面板里的链接跳转
+        function clickNodeByName(name) {
+            const node = Graph.graphData().nodes.find(n => n.id === name);
+            if (node) {
+                // 聚焦
+                const distance = 60;
+                const distRatio = 1 + distance / Math.hypot(node.x, node.y, node.z);
+                Graph.cameraPosition(
+                    { x: node.x * distRatio, y: node.y * distRatio, z: node.z * distRatio },
+                    node,
+                    2000
+                );
+                showPanel(node);
+            }
+        }
+    </script>
+</body>
+</html>
